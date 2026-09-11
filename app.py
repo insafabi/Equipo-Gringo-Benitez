@@ -20,9 +20,7 @@ archivo_subido = st.file_uploader(
 if archivo_subido is not None:
   df = pd.read_excel(archivo_subido)
 
-  st.success(
-      f"¡Padrón cargado con éxito! Total de contactos: {len(df)}"
-  )
+  st.success(f"¡Padrón cargado con éxito! Total de contactos: {len(df)}")
 
   # Control de bloques para no saturar el navegador
   batch_size = st.slider(
@@ -58,10 +56,15 @@ if archivo_subido is not None:
       mesa = "Mesa"
       orden = "Orden"
 
+    # Mensaje optimizado con emojis y formato prolijo
     mensaje = (
-        f"Hola {nombre}! Te escribimos desde el equipo Gringo Benítez, Lista 1"
-        f" Opción 1, para recordarte tus datos de votación: Local: {local} -"
-        f" Mesa: {mesa} - Orden: {orden}. Tu participación es clave!"
+        f"¡Hola *{nombre}*! 👋\n\n"
+        f"Te escribimos desde el equipo *Gringo Benítez* (Lista 1 - Opción 1). "
+        f"Queremos recordarte tus datos para este día de votación: 🗳️\n\n"
+        f"📍 *Local:* {local}\n"
+        f"🏫 *Mesa:* {mesa}\n"
+        f"🔢 *Orden:* {orden}\n\n"
+        f"¡Tu participación es clave y contamos contigo! 💪🇵🇾"
     )
 
     encoded_msg = urllib.parse.quote(mensaje)
