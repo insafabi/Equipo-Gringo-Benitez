@@ -56,15 +56,16 @@ if archivo_subido is not None:
       mesa = "Mesa"
       orden = "Orden"
 
-    # Mensaje optimizado con emojis y formato prolijo
+    # Nuevo mensaje actualizado con tu diseño institucional
     mensaje = (
-        f"¡Hola *{nombre}*! 👋\n\n"
-        f"Te escribimos desde el equipo *Gringo Benítez* (Lista 1 - Opción 1). "
-        f"Queremos recordarte tus datos para este día de votación: 🗳️\n\n"
-        f"📍 *Local:* {local}\n"
-        f"🏫 *Mesa:* {mesa}\n"
-        f"🔢 *Orden:* {orden}\n\n"
-        f"¡Tu participación es clave y contamos contigo! 💪🇵🇾"
+        f"¡Hola *{nombre}*\n\n"
+        f"🇵🇾🎉 ¡Este *4 de octubre*, Asunción vivirá una gran fiesta cívica!\n\n"
+        f"Soy *Gringo Benítez*, candidato a Concejal por la *Lista 1 - Opción 1*, "
+        f"y junto a *Camilo, candidato a Intendente*, te invito a participar. 🗳️\n\n"
+        f"📍 *{local}* |\n"
+        f"🏫 *Mesa {mesa}* |\n"
+        f"🔢 *Orden {orden}*\n\n"
+        f"**¡Tu participación es clave! 🇵🇾**"
     )
 
     encoded_msg = urllib.parse.quote(mensaje)
