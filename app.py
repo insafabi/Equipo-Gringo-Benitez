@@ -12,7 +12,7 @@ st.write(
     " riesgos."
 )
 
-# Cuadro seguro para cargar el archivo Excel directamente desde tu PC
+# Cuadro seguro para cargar el archivo Excel directamente desde tu PC o celular
 archivo_subido = st.file_uploader(
     "Sube tu archivo Excel de contactos (.xlsx)", type=["xlsx", "xls"]
 )
@@ -22,7 +22,7 @@ if archivo_subido is not None:
 
   st.success(f"¡Padrón cargado con éxito! Total de contactos: {len(df)}")
 
-  # Control de bloques para no saturar el navegador
+  # Control de bloques para no saturar la pantalla
   batch_size = st.slider(
       "Selecciona cuántos contactos mostrar por página:", 10, 50, 20
   )
@@ -56,7 +56,7 @@ if archivo_subido is not None:
       mesa = "Mesa"
       orden = "Orden"
 
-    # Nuevo mensaje actualizado con tu diseño institucional
+    # Mensaje institucional actualizado con tu diseño
     mensaje = (
         f"¡Hola *{nombre}*\n\n"
         f"🇵🇾🎉 ¡Este *4 de octubre*, Asunción vivirá una gran fiesta cívica!\n\n"
@@ -69,8 +69,9 @@ if archivo_subido is not None:
     )
 
     encoded_msg = urllib.parse.quote(mensaje)
+    # Enlace universal compatible con celulares y computadoras
     whatsapp_url = (
-        f"https://web.whatsapp.com/send?phone={telefono}&text={encoded_msg}"
+        f"https://api.whatsapp.com/send?phone={telefono}&text={encoded_msg}"
     )
 
     col1, col2, col3 = st.columns([3, 2, 2])
