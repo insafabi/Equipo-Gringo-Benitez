@@ -1,96 +1,70 @@
-import urllib.parse
-import pandas as pd
+import requests
 import streamlit as st
 
 st.set_page_config(
-    page_title="Movilización Gringo Benítez", page_icon="🗳️", layout="wide"
+    page_title="Connecta Py - WhatsApp API", page_icon="💬", layout="centered"
 )
 
-st.title("🗳️ Panel de Movilización - Equipo Gringo Benítez")
-st.write(
-    "Sube tu padrón de Excel de forma privada para gestionar los envíos sin"
-    " riesgos."
+st.title("💬 Connecta Py - Automatización WhatsApp")
+st.markdown("Panel de pruebas e integración con Meta Cloud API.")
+
+# Configuración de credenciales fijas de la app
+PHONE_NUMBER_ID = "1240549692484084"
+
+# Interfaz visual en Streamlit
+st.sidebar.header("Credenciales y Configuración")
+access_token = st.sidebar.text_input(
+    "Token de Acceso de Meta", type="password"
 )
 
-# Cuadro seguro para cargar el archivo Excel directamente desde tu PC o celular
-archivo_subido = st.file_uploader(
-    "Sube tu archivo Excel de contactos (.xlsx)", type=["xlsx", "xls"]
+st.subheader("Enviar Mensaje de Texto")
+
+# Entrada para el número de destino (ej: 595992021341)
+recipient_phone = st.text_input(
+    "Número de destino (con código de país, sin '+' ej: 595992021341)",
+    value="595992021341",
 )
 
-if archivo_subido is not None:
-  df = pd.read_excel(archivo_subido)
+message_body = st.text_area(
+    "Mensaje",
+    value=(
+        "¡Hola! Este es un mensaje automatizado de prueba desde Connecta"
+        " Py 🚀"
+    ),
+)
 
-  st.success(f"¡Padrón cargado con éxito! Total de contactos: {len(df)}")
+if st.button("Enviar Mensaje a través de WhatsApp", type="primary"):
+  if not access_token:
+    st.error("Por favor ingresa tu Token de Acceso en la barra lateral.")
+  elif not recipient_phone:
+    st.error("Por favor ingresa un número de destino.")
+  else:
+    # Endpoint oficial de Meta Graph API (v21.0)
+    url = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
 
-  # Control de bloques para no saturar la pantalla
-  batch_size = st.slider(
-      "Selecciona cuántos contactos mostrar por página:", 10, 50, 20
-  )
-  pagina = st.number_input(
-      "Bloque / Página",
-      min_value=1,
-      max_value=max(1, (len(df) // batch_size) + 1),
-      step=1,
-  )
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
 
-  inicio = (pagina - 1) * batch_size
-  fin = min(inicio + batch_size, len(df))
-  lote_actual = df.iloc[inicio:fin]
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": recipient_phone.strip(),
+        "type": "text",
+        "text": {"preview_url": False, "body": message_body},
+    }
 
-  st.subheader(
-      f"Mostrando contactos del {inicio + 1} al {fin} (Bloque {pagina})"
-  )
+    with st.spinner("Enviando mensaje a través de la API..."):
+      try:
+        response = requests.post(url, json=payload, headers=headers)
+        res_data = response.json()
 
-  for idx, row in lote_actual.iterrows():
-    # Asume las columnas: E (índice 4)=Nombre, C (índice 2)=Local, H (índice 7)=Mesa, I (índice 8)=Orden, J (índice 9)=Teléfono
-    try:
-      nombre = str(row.iloc[4])
-      local = str(row.iloc[2])
-      mesa = str(row.iloc[7])
-      orden = str(row.iloc[8])
-      telefono = str(row.iloc[9])
-    except Exception:
-      nombre = str(row.iloc[0])
-      telefono = str(row.iloc[1])
-      local = "Local"
-      mesa = "Mesa"
-      orden = "Orden"
-
-    # Mensaje institucional actualizado con tu diseño
-    mensaje = (
-        f"¡Hola *{nombre}*\n\n"
-        f"🇵🇾🎉 ¡Este *4 de octubre*, Asunción vivirá una gran fiesta cívica!\n\n"
-        f"Soy *Gringo Benítez*, candidato a Concejal por la *Lista 1 - Opción 1*, "
-        f"y junto a *Camilo, candidato a Intendente*, te invito a participar. 🗳️\n\n"
-        f"📍 *{local}* |\n"
-        f"🏫 *Mesa {mesa}* |\n"
-        f"🔢 *Orden {orden}*\n\n"
-        f"**¡Tu participación es clave! 🇵🇾**"
-    )
-
-    encoded_msg = urllib.parse.quote(mensaje)
-    # Enlace universal compatible con celulares y computadoras
-    whatsapp_url = (
-        f"https://api.whatsapp.com/send?phone={telefono}&text={encoded_msg}"
-    )
-
-    col1, col2, col3 = st.columns([3, 2, 2])
-    with col1:
-      st.markdown(f"**{nombre}** (Tel: {telefono})")
-      st.caption(f"Local: {local} | Mesa: {mesa} | Orden: {orden}")
-    with col2:
-      st.markdown(
-          f'<a href="{whatsapp_url}" target="_blank" style="background-color:#25D366;color:white;padding:8px'
-          ' 12px;text-decoration:none;border-radius:5px;display:inline-block;">💬'
-          " Abrir Chat</a>",
-          unsafe_allow_html=True,
-      )
-    with col3:
-      st.text(f"Fila Excel #{idx + 2}")
-
-    st.divider()
-else:
-  st.info(
-      "Por favor, sube tu archivo Excel en el botón de arriba para comenzar a"
-      " ver los contactos."
-  )
+        if response.status_code == 200:
+          st.success("¡Mensaje enviado con éxito!")
+          st.json(res_data)
+        else:
+          st.error(f"Error en el envío (Código {response.status_code})")
+          st.json(res_data)
+      except Exception as e:
+        st.error(f"Ocurrió un error de conexión: {e}")
