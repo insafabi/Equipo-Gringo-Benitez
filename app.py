@@ -127,11 +127,22 @@ if uploaded_file is not None:
               "Authorization": f"Bearer {token}",
               "Content-Type": "application/json",
           }
-          # Actualizado a la versión v20.0 para garantizar compatibilidad y evitar rechazos de autorización
+          # URL con versión v20.0
           url = f"https://graph.facebook.com/v20.0/{phone_number_id}/messages"
 
           for index, row in df_procesar.iterrows():
-            nombre = str(row[col_nombre]).strip()
+            # Limpiar texto para evitar conflictos de codificación por emojis o símbolos
+            def limpiar_texto(texto):
+              if pd.isna(texto):
+                return ""
+              return (
+                  str(texto)
+                  .encode("ascii", "ignore")
+                  .decode("ascii")
+                  .strip()
+              )
+
+            nombre = limpiar_texto(row[col_nombre])
             
             # Limpiar número de celular (quita decimales .0 de excel, espacios y guiones)
             celular_raw = str(row[col_celular]).strip()
@@ -142,13 +153,11 @@ if uploaded_file is not None:
                 .replace("+", "")
             )
 
-            # Capturar los datos del padrón electoral utilizando las columnas detectadas dinámicamente
-            local_votacion = str(row[col_local]).strip()
-            mesa_votacion = str(row[col_mesa]).strip()
-            orden_votacion = str(row[col_orden]).strip()
+            # Capturar los datos del padrón electoral limpiando caracteres extraños
+            local_votacion = limpiar_texto(row[col_local])
+            mesa_votacion = limpiar_texto(row[col_mesa])
+            orden_votacion = limpiar_texto(row[col_orden])
 
-            # Estructura del payload con los 4 parámetros ordenados para la plantilla de Meta:
-            # {{1}} = Nombre | {{2}} = Local | {{3}} = Mesa | {{4}} = Orden
             payload = {
                 "messaging_product": "whatsapp",
                 "to": celular,
@@ -198,8 +207,8 @@ if uploaded_file is not None:
                 f" Fallidos: {fallidos})"
             )
 
-            # Pausa aleatoria configurable entre mínimo y máximo para proteger la cuenta
-            if index < total - 1:  # No pausar después del último mensaje
+            # Pausa aleatoria configurable
+            if index < total - 1:
               tiempo_pausa = random.randint(pausa_min, pausa_max)
               time.sleep(tiempo_pausa)
 
