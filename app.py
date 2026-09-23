@@ -1,6 +1,8 @@
 import time
 import random
-import requests
+import json
+import urllib.request
+import urllib.error
 import pandas as pd
 import streamlit as st
 
@@ -117,21 +119,14 @@ if uploaded_file is not None:
 
           log_container = st.container()
 
-          # Forzar sesión HTTP asegurando codificación limpia y sin caracteres latín extraños
-          session = requests.Session()
-          session.headers.update({
-              "Authorization": f"Bearer {token.strip()}",
-              "Content-Type": "application/json; charset=utf-8",
-          })
           url = f"https://graph.facebook.com/v20.0/{str(phone_number_id).strip()}/messages"
+          clean_token = str(token).strip()
 
           for index, row in df_procesar.iterrows():
             def limpiar_texto(valor):
               if pd.isna(valor):
                 return ""
-              # Eliminar cualquier caracter raro, emojis o símbolos ocultos
-              texto = str(valor)
-              return "".join(c for c in texto if ord(c) < 128 or c.isalnum() or c.isspace() or c in "áéíóúÁÉÍÓÚñÑ.,-_").strip()
+              return str(valor).strip()
 
             nombre = limpiar_texto(row[col_nombre])
             
@@ -167,20 +162,31 @@ if uploaded_file is not None:
             }
 
             try:
-              # Usar la sesión HTTP configurada y timeout de seguridad
-              response = session.post(url, json=payload, timeout=10)
+              # Convertir payload a JSON codificado en utf-8 estricto
+              data_json = json.dumps(payload).encode("utf-8")
               
-              if response.status_code == 200:
-                exitosos += 1
-                with log_container:
-                  st.success(f"✅ Enviado a {nombre} ({celular})")
-              else:
-                fallidos += 1
-                with log_container:
-                  st.error(
-                      f"❌ Error HTTP {response.status_code} con {nombre} ({celular}):"
-                      f" {response.text}"
-                  )
+              req = urllib.request.Request(url, data=data_json, method="POST")
+              req.add_header("Authorization", f"Bearer {clean_token}")
+              req.add_header("Content-Type", "application/json; charset=utf-8")
+
+              with urllib.request.urlopen(req, timeout=10) as response:
+                if response.status == 200:
+                  exitosos += 1
+                  with log_container:
+                    st.success(f"✅ Enviado a {nombre} ({celular})")
+                else:
+                  fallidos += 1
+                  with log_container:
+                    st.error(
+                        f"❌ Error con {nombre} ({celular}): código {response.status}"
+                    )
+            except urllib.error.HTTPError as e:
+              fallidos += 1
+              error_body = e.read().decode("utf-8", errors="ignore")
+              with log_container:
+                st.error(
+                    f"❌ Error HTTP de Meta con {nombre} ({celular}): {error_body}"
+                )
             except Exception as e:
               fallidos += 1
               with log_container:
