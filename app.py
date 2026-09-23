@@ -69,7 +69,7 @@ if uploaded_file is not None:
   try:
     # Leer el archivo según su extensión
     if uploaded_file.name.endswith(".csv"):
-      df = pd.read_csv(uploaded_file)
+      df = pd.read_csv(uploaded_file, encoding="utf-8")
     else:
       df = pd.read_excel(uploaded_file)
 
@@ -125,22 +125,17 @@ if uploaded_file is not None:
 
           headers = {
               "Authorization": f"Bearer {token}",
-              "Content-Type": "application/json",
+              "Content-Type": "application/json; charset=utf-8",
           }
           # URL con versión v20.0
           url = f"https://graph.facebook.com/v20.0/{phone_number_id}/messages"
 
           for index, row in df_procesar.iterrows():
-            # Limpiar texto para evitar conflictos de codificación por emojis o símbolos
+            # Limpieza segura que preserva tildes y eñes usando utf-8
             def limpiar_texto(texto):
               if pd.isna(texto):
                 return ""
-              return (
-                  str(texto)
-                  .encode("ascii", "ignore")
-                  .decode("ascii")
-                  .strip()
-              )
+              return str(texto).strip()
 
             nombre = limpiar_texto(row[col_nombre])
             
@@ -153,7 +148,7 @@ if uploaded_file is not None:
                 .replace("+", "")
             )
 
-            # Capturar los datos del padrón electoral limpiando caracteres extraños
+            # Capturar los datos manteniendo acentos y eñes correctamente
             local_votacion = limpiar_texto(row[col_local])
             mesa_votacion = limpiar_texto(row[col_mesa])
             orden_votacion = limpiar_texto(row[col_orden])
@@ -178,9 +173,22 @@ if uploaded_file is not None:
             }
 
             try:
+              # Usar json.dumps asegurando codificación utf-8 explícita para evitar errores con tildes
+              response = requests.post(
+                  url,
+                  data=pd.io.json.json.dumps(payload).encode("utf-8")
+                  if hasattr(pd.io, "json")
+                  else requests.compat.json.dumps(payload).encode("utf-8"),
+                  headers=headers,
+                  timeout=10,
+              )
+            except Exception:
+              # Método alternativo estándar y robusto de requests con json
               response = requests.post(
                   url, json=payload, headers=headers, timeout=10
               )
+
+            try:
               if response.status_code == 200:
                 exitosos += 1
                 with log_container:
