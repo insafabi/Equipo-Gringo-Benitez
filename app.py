@@ -56,7 +56,8 @@ st.markdown(
 st.markdown("### 1. Carga de Base de Datos")
 st.markdown(
     "Tu archivo Excel o CSV debe contener obligatoriamente las columnas:"
-    " **NOMBRE**, **celular**, **local**, **mesa**, **orden**"
+    " **NOMBRE**, **celular**, **local**, **mesa**, **orden** (sin importar"
+    " mayúsculas o minúsculas)."
 )
 
 uploaded_file = st.file_uploader(
@@ -72,21 +73,27 @@ if uploaded_file is not None:
     else:
       df = pd.read_excel(uploaded_file)
 
-    # Limpiar nombres de columnas (quitar espacios si los hubiera)
-    df.columns = df.columns.str.strip()
+    # Crear un diccionario para mapear los nombres reales de las columnas en minúsculas sin espacios
+    # Esto permite detectar las columnas sin importar cómo estén escritas (NOMBRE, nombre, Nombre, etc.)
+    columnas_map = {str(col).strip().lower(): col for col in df.columns}
 
-    # Validación estricta de columnas requeridas (puedes ajustar si tus encabezados varían ligeramente en mayúsculas/minúsculas)
-    columnas_necesarias = ["NOMBRE", "celular", "local", "mesa", "orden"]
-    faltantes = [
-        col for col in columnas_necesarias if col not in df.columns
-    ]
+    # Definir las columnas requeridas que el sistema necesita buscar
+    requeridas = ["nombre", "celular", "local", "mesa", "orden"]
+    faltantes = [req for req in requeridas if req not in columnas_map]
 
     if faltantes:
       st.error(
           f"❌ El archivo no tiene las columnas obligatorias. Faltan: {faltantes}"
-          ". Por favor, verifica los nombres de los encabezados en tu Excel."
+          ". Por favor, verifica los encabezados en tu Excel."
       )
     else:
+      # Extraer los nombres reales de las columnas del DataFrame usando el mapa flexible
+      col_nombre = columnas_map["nombre"]
+      col_celular = columnas_map["celular"]
+      col_local = columnas_map["local"]
+      col_mesa = columnas_map["mesa"]
+      col_orden = columnas_map["orden"]
+
       st.success(
           f"✅ Archivo cargado correctamente. Total de registros en archivo:"
           f" {len(df)}"
@@ -124,10 +131,10 @@ if uploaded_file is not None:
           url = f"https://graph.facebook.com/v17.0/{phone_number_id}/messages"
 
           for index, row in df_procesar.iterrows():
-            nombre = str(row["NOMBRE"]).strip()
+            nombre = str(row[col_nombre]).strip()
             
             # Limpiar número de celular (quita decimales .0 de excel, espacios y guiones)
-            celular_raw = str(row["celular"]).strip()
+            celular_raw = str(row[col_celular]).strip()
             celular = (
                 celular_raw.split(".")[0]
                 .replace(" ", "")
@@ -135,10 +142,10 @@ if uploaded_file is not None:
                 .replace("+", "")
             )
 
-            # Capturar los datos del padrón electoral para los parámetros de la plantilla
-            local_votacion = str(row["local"]).strip()
-            mesa_votacion = str(row["mesa"]).strip()
-            orden_votacion = str(row["orden"]).strip()
+            # Capturar los datos del padrón electoral utilizando las columnas detectadas dinámicamente
+            local_votacion = str(row[col_local]).strip()
+            mesa_votacion = str(row[col_mesa]).strip()
+            orden_votacion = str(row[col_orden]).strip()
 
             # Estructura del payload con los 4 parámetros ordenados para la plantilla de Meta:
             # {{1}} = Nombre | {{2}} = Local | {{3}} = Mesa | {{4}} = Orden
