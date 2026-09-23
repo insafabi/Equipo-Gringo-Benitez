@@ -15,9 +15,19 @@ st.set_page_config(
 
 # --- BARRA LATERAL: CREDENCIALES Y CONTROLES ---
 st.sidebar.header("🔑 Credenciales de la API")
-token = st.sidebar.text_input("Token de Acceso Permanente", type="password")
-phone_number_id = st.sidebar.text_input("Phone Number ID")
-template_name = st.sidebar.text_input("Nombre de la Plantilla", value="")
+token_raw = st.sidebar.text_input("Token de Acceso Permanente", type="password")
+phone_raw = st.sidebar.text_input("Phone Number ID")
+template_raw = st.sidebar.text_input("Nombre de la Plantilla", value="")
+
+# Limpiar automáticamente credenciales de cualquier emoji o caracter invisible pegado por error
+def limpiar_ascii(texto):
+    if not texto:
+        return ""
+    return "".join(c for c in str(texto) if ord(c) < 128).strip()
+
+token = limpiar_ascii(token_raw)
+phone_number_id = limpiar_ascii(phone_raw)
+template_name = limpiar_ascii(template_raw)
 
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Controles de Envío")
@@ -56,8 +66,7 @@ st.markdown(
 st.markdown("### 1. Carga de Base de Datos")
 st.markdown(
     "Tu archivo Excel o CSV debe contener obligatoriamente las columnas:"
-    " **NOMBRE**, **celular**, **local**, **mesa**, **orden** (sin importar"
-    " mayúsculas o minúsculas)."
+    " **local**, **apellido**, **nombre**, **mesa**, **orden**, **celular**."
 )
 
 uploaded_file = st.file_uploader(
@@ -108,7 +117,7 @@ if uploaded_file is not None:
         if not token or not phone_number_id or not template_name:
           st.warning(
               "⚠️ Por favor, completa todas las credenciales en la barra"
-              " lateral (Token, Phone ID y Plantilla)."
+              " lateral (Token, Phone ID y Plantilla) sin dejar espacios ni símbolos extraños."
           )
         else:
           barra_progreso = st.progress(0)
@@ -119,8 +128,7 @@ if uploaded_file is not None:
 
           log_container = st.container()
 
-          url = f"https://graph.facebook.com/v20.0/{str(phone_number_id).strip()}/messages"
-          clean_token = str(token).strip()
+          url = f"https://graph.facebook.com/v20.0/{phone_number_id}/messages"
 
           for index, row in df_procesar.iterrows():
             def limpiar_texto(valor):
@@ -147,7 +155,7 @@ if uploaded_file is not None:
                 "to": celular,
                 "type": "template",
                 "template": {
-                    "name": template_name.strip(),
+                    "name": template_name,
                     "language": {"code": "es"},
                     "components": [{
                         "type": "body",
@@ -162,11 +170,10 @@ if uploaded_file is not None:
             }
 
             try:
-              # Convertir payload a JSON codificado en utf-8 estricto
               data_json = json.dumps(payload).encode("utf-8")
               
               req = urllib.request.Request(url, data=data_json, method="POST")
-              req.add_header("Authorization", f"Bearer {clean_token}")
+              req.add_header("Authorization", f"Bearer {token}")
               req.add_header("Content-Type", "application/json; charset=utf-8")
 
               with urllib.request.urlopen(req, timeout=10) as response:
