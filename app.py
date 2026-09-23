@@ -20,7 +20,6 @@ template_name = st.sidebar.text_input("Nombre de la Plantilla", value="")
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Controles de Envío")
 
-# Deslizador de cantidad de mensajes
 max_msgs = st.sidebar.slider(
     "Cantidad de mensajes a enviar",
     min_value=1,
@@ -30,7 +29,6 @@ max_msgs = st.sidebar.slider(
     help="Úsalo en 1 para hacer tu prueba de fuego con tu número.",
 )
 
-# Deslizadores de pausa (Mínimo y Máximo)
 pausa_min = st.sidebar.slider(
     "Pausa Mínima entre mensajes (segundos)",
     min_value=1,
@@ -67,7 +65,6 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file is not None:
   try:
-    # Leer el archivo de forma segura ignorando errores de codificación
     if uploaded_file.name.endswith(".csv"):
       df = pd.read_csv(uploaded_file, encoding="utf-8", errors="ignore")
     else:
@@ -77,7 +74,6 @@ if uploaded_file is not None:
     df.columns = [str(col).strip() for col in df.columns]
     columnas_map = {str(col).strip().lower(): col for col in df.columns}
 
-    # Definir las columnas requeridas que el sistema necesita buscar
     requeridas = ["nombre", "celular", "local", "mesa", "orden"]
     faltantes = [req for req in requeridas if req not in columnas_map]
 
@@ -87,7 +83,6 @@ if uploaded_file is not None:
           ". Por favor, verifica los encabezados en tu Excel."
       )
     else:
-      # Extraer los nombres reales de las columnas del DataFrame usando el mapa flexible
       col_nombre = columnas_map["nombre"]
       col_celular = columnas_map["celular"]
       col_local = columnas_map["local"]
@@ -99,7 +94,6 @@ if uploaded_file is not None:
           f" {len(df)}"
       )
 
-      # Mostrar vista previa limitada a lo que el usuario configuró en el slider
       df_procesar = df.head(max_msgs)
       st.info(
           f"ℹ️ Se procesarán los primeros **{len(df_procesar)}** registros según"
@@ -121,28 +115,26 @@ if uploaded_file is not None:
           exitosos = 0
           fallidos = 0
 
-          # Contenedor para el registro de resultados en tiempo real
           log_container = st.container()
 
-          headers = {
-              "Authorization": f"Bearer {token}",
-              "Content-Type": "application/json",
-          }
-          # URL con versión v20.0
-          url = f"https://graph.facebook.com/v20.0/{phone_number_id}/messages"
+          # Forzar sesión HTTP asegurando codificación limpia y sin caracteres latín extraños
+          session = requests.Session()
+          session.headers.update({
+              "Authorization": f"Bearer {token.strip()}",
+              "Content-Type": "application/json; charset=utf-8",
+          })
+          url = f"https://graph.facebook.com/v20.0/{str(phone_number_id).strip()}/messages"
 
           for index, row in df_procesar.iterrows():
-            # Función ultra segura para limpiar emojis y caracteres problemáticos para latin-1
             def limpiar_texto(valor):
               if pd.isna(valor):
                 return ""
+              # Eliminar cualquier caracter raro, emojis o símbolos ocultos
               texto = str(valor)
-              # Filtra caracteres fuera del rango estándar para evitar errores de codec
-              return "".join(c for c in texto if ord(c) < 65536).strip()
+              return "".join(c for c in texto if ord(c) < 128 or c.isalnum() or c.isspace() or c in "áéíóúÁÉÍÓÚñÑ.,-_").strip()
 
             nombre = limpiar_texto(row[col_nombre])
             
-            # Limpiar número de celular (quita decimales .0 de excel, espacios y guiones)
             celular_raw = str(row[col_celular]).strip()
             celular = (
                 celular_raw.split(".")[0]
@@ -151,7 +143,6 @@ if uploaded_file is not None:
                 .replace("+", "")
             )
 
-            # Capturar los datos limpiando emojis o símbolos extraños
             local_votacion = limpiar_texto(row[col_local])
             mesa_votacion = limpiar_texto(row[col_mesa])
             orden_votacion = limpiar_texto(row[col_orden])
@@ -161,7 +152,7 @@ if uploaded_file is not None:
                 "to": celular,
                 "type": "template",
                 "template": {
-                    "name": template_name,
+                    "name": template_name.strip(),
                     "language": {"code": "es"},
                     "components": [{
                         "type": "body",
@@ -176,9 +167,9 @@ if uploaded_file is not None:
             }
 
             try:
-              response = requests.post(
-                  url, json=payload, headers=headers, timeout=10
-              )
+              # Usar la sesión HTTP configurada y timeout de seguridad
+              response = session.post(url, json=payload, timeout=10)
+              
               if response.status_code == 200:
                 exitosos += 1
                 with log_container:
@@ -187,17 +178,16 @@ if uploaded_file is not None:
                 fallidos += 1
                 with log_container:
                   st.error(
-                      f"❌ Error con {nombre} ({celular}):"
+                      f"❌ Error HTTP {response.status_code} con {nombre} ({celular}):"
                       f" {response.text}"
                   )
             except Exception as e:
               fallidos += 1
               with log_container:
                 st.error(
-                    f"⚠️ Excepción de red/sistema con {nombre} ({celular}): {e}"
+                    f"⚠️ Excepción de red con {nombre} ({celular}): {str(e)}"
                 )
 
-            # Actualizar barra de progreso
             porcentaje = int(((index + 1) / total) * 100)
             barra_progreso.progress(porcentaje)
             status_text.text(
@@ -205,7 +195,6 @@ if uploaded_file is not None:
                 f" Fallidos: {fallidos})"
             )
 
-            # Pausa aleatoria configurable
             if index < total - 1:
               tiempo_pausa = random.randint(pausa_min, pausa_max)
               time.sleep(tiempo_pausa)
@@ -217,9 +206,6 @@ if uploaded_file is not None:
           )
 
   except Exception as e:
-    # Limpiar mensaje de error general para que nunca falle por codificación
-    error_limpio = "".join(c for c in str(e) if ord(c) < 65536)
     st.error(
-        f"❌ Ocurrió un error al leer el archivo. Verifica que sea un Excel o"
-        f" CSV válido. Detalle: {error_limpio}"
+        f"❌ Ocurrió un error al leer el archivo. Detalle: {str(e)}"
     )
