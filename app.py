@@ -74,7 +74,6 @@ if uploaded_file is not None:
       df = pd.read_excel(uploaded_file)
 
     # Crear un diccionario para mapear los nombres reales de las columnas en minúsculas sin espacios
-    # Esto permite detectar las columnas sin importar cómo estén escritas (NOMBRE, nombre, Nombre, etc.)
     columnas_map = {str(col).strip().lower(): col for col in df.columns}
 
     # Definir las columnas requeridas que el sistema necesita buscar
@@ -128,7 +127,8 @@ if uploaded_file is not None:
               "Authorization": f"Bearer {token}",
               "Content-Type": "application/json",
           }
-          url = f"https://graph.facebook.com/v17.0/{phone_number_id}/messages"
+          # Actualizado a la versión v20.0 para garantizar compatibilidad y evitar rechazos de autorización
+          url = f"https://graph.facebook.com/v20.0/{phone_number_id}/messages"
 
           for index, row in df_procesar.iterrows():
             nombre = str(row[col_nombre]).strip()
