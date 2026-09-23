@@ -1,196 +1,137 @@
-import random
 import time
 import pandas as pd
 import requests
 import streamlit as st
 
-# Configuración de la página de Streamlit
 st.set_page_config(
-    page_title="Connecta Py - Campaña Masiva Segura", layout="wide"
+    page_title="Campaña Gringo Benítez - Meta API", page_icon="🗳️", layout="centered"
 )
 
-st.title("🚀 Connecta Py: Sistema de Envío Masivo Seguro (Meta API)")
-st.markdown(
-    "Herramienta optimizada para envíos controlados de WhatsApp con"
-    " protecciones anti-spam, filtrado automático y gestión por lotes."
+st.title("🗳️ Panel de Envío Masivo - Meta Cloud API")
+st.write(
+    "Automatización conectada directamente con tu padrón de votantes y la"
+    " plantilla aprobada."
 )
 
-# Sidebar para Credenciales y Configuración de Seguridad
-with st.sidebar:
-  st.header("🔑 Credenciales de Meta")
-  access_token = st.text_input(
-      "Permanent Access Token", type="password", help="Tu token de sistema."
-  )
-  phone_number_id = st.text_input(
-      "Phone Number ID",
-      value="1348015601728218",
-      help="ID numérico de tu teléfono.",
-  )
-  template_name = st.text_input(
-      "Nombre de la Plantilla",
-      value="aviso_general",
-      help="Plantilla aprobada por Meta.",
-  )
-
-  st.header("🛡️ Parámetros Anti-Spam y Lotes")
-  lote_size = st.slider(
-      "Tamaño de cada lote",
-      min_value=50,
-      max_value=500,
-      value=100,
-      step=50,
-      help="Cantidad de mensajes por tanda.",
-  )
-  delay_min = st.slider(
-      "Retraso mínimo (segundos)",
-      min_value=1.0,
-      max_value=5.0,
-      value=2.0,
-      step=0.5,
-  )
-  delay_max = st.slider(
-      "Retraso máximo (segundos)",
-      min_value=3.0,
-      max_value=10.0,
-      value=5.0,
-      step=0.5,
-  )
-
-# Área principal para cargar archivo Excel
-st.header("📂 Carga de Base de Datos (Excel)")
-uploaded_file = st.file_uploader(
-    "Sube tu archivo con la columna de teléfonos y variables",
-    type=["xlsx", "xls"],
+# --- BARRA LATERAL: CREDENCIALES ---
+st.sidebar.header("Credenciales de la API")
+token = st.sidebar.text_input("Token de Acceso Permanente", type="password")
+phone_number_id = st.sidebar.text_input("Phone Number ID")
+template_name = st.sidebar.text_input(
+    "Nombre de la Plantilla",
+    value="aviso_general",
+    help="Debe coincidir exactamente con el de Meta",
 )
 
-if uploaded_file is not None:
-  df = pd.read_excel(uploaded_file)
-  st.success(f"Archivo cargado correctamente. Total de registros: {len(df)}")
+# --- CUERPO PRINCIPAL ---
+st.subheader("1. Carga de Base de Datos")
+archivo_subido = st.file_uploader(
+    "Sube tu archivo Excel con la estructura de columnas NOMBRE y celular",
+    type=["xlsx", "csv"],
+)
 
-  st.write("Vista previa de los datos:")
-  st.dataframe(df.head())
+if archivo_subido is not None:
+  if archivo_subido.name.endswith(".csv"):
+    df = pd.read_csv(archivo_subido)
+  else:
+    df = pd.read_excel(archivo_subido)
 
-  # Selección de la columna de teléfonos
-  columnas = df.columns.tolist()
-  tel_col = st.selectbox(
-      "Selecciona la columna que contiene los números de teléfono:", columnas
+  st.success(f"¡Archivo cargado con éxito! Total de registros: {len(df)}")
+
+  with st.expander("Ver vista previa de los datos a enviar"):
+    st.dataframe(df[["NOMBRE", "celular"]].head(5))
+
+  st.subheader("2. Configuración de la Ráfaga")
+  limite_defecto = min(150, len(df))
+  limite_mensajes = st.slider(
+      "Cantidad máxima de mensajes a enviar en este lote",
+      min_value=1,
+      max_value=len(df),
+      value=limite_defecto,
   )
 
-  if st.button("🚀 Iniciar Campaña Protegida"):
-    if not access_token:
-      st.error("Por favor, ingresa tu Access Token en la barra lateral.")
-    else:
-      url = (
-          f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
+  st.info(
+      f"Se enviarán mensajes de manera automatizada a los primeros"
+      f" **{limite_mensajes}** votantes de la lista."
+  )
+
+  if st.button("🚀 Iniciar Envío Masivo por API"):
+    if not token or not phone_number_id:
+      st.error(
+          "⚠️ Por favor, ingresa tu Token de Meta y tu Phone Number ID en la"
+          " barra lateral."
       )
+    else:
+      url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
       headers = {
-          "Authorization": f"Bearer {access_token}",
+          "Authorization": f"Bearer {token}",
           "Content-Type": "application/json",
       }
 
-      total_contactos = len(df)
       progress_bar = st.progress(0)
       status_text = st.empty()
-      log_area = st.empty()
+      log_area = st.container()
 
-      logs = []
       enviados_exitosos = 0
-      fallidos = 0
-      omitidos = 0
+      df_subset = df.head(limite_mensajes)
+      total = len(df_subset)
 
-      # Ciclo principal segmentado por lotes automáticos
-      for i in range(0, total_contactos, lote_size):
-        lote = df.iloc[i : i + lote_size]
-        lote_num = (i // lote_size) + 1
-        total_lotes = (total_contactos + lote_size - 1) // lote_size
+      for i, row in df_subset.iterrows():
+        raw_tel = str(row["celular"]).strip()
+        if raw_tel.endswith(".0"):
+          raw_tel = raw_tel[:-2]
+        if not raw_tel.startswith("+"):
+          telefono = "+" + raw_tel
+        else:
+          telefono = raw_tel
 
-        status_text.markdown(
-            f"### ⚙️ Procesando Lote {lote_num} de {total_lotes} (Contactos"
-            f" {i+1} al {min(i+lote_size, total_contactos)})"
-        )
+        nombre_raw = str(row["NOMBRE"]).strip()
+        if not nombre_raw or nombre_raw.lower() == "nan":
+          nombre = "Vecino/a"
+        else:
+          nombre = nombre_raw.title()
 
-        for index, row in lote.iterrows():
-          telefono_raw = str(row[tel_col]).strip()
-          # Limpiar caracteres dejando solo dígitos numéricos
-          telefono = "".join(filter(str.isdigit, telefono_raw))
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": telefono,
+            "type": "template",
+            "template": {
+                "name": template_name,
+                "language": {"code": "es"},
+                "components": [
+                    {
+                        "type": "body",
+                        "parameters": [{"type": "text", "text": nombre}],
+                    }
+                ],
+            },
+        }
 
-          # 🚫 FILTRO DE SEGURIDAD ESTRICTO: Omitir vacíos, cortos o patrones de prueba (ej: 5950000...)
-          if (
-              not telefono
-              or telefono.startswith("5950000")
-              or len(telefono) < 8
-          ):
-            omitidos += 1
-            logs.append(
-                f"⚠️ [Omitido por seguridad] Número inválido o de prueba"
-                f" detectado: {telefono_raw}"
+        try:
+          response = requests.post(url, headers=headers, json=payload)
+
+          if response.status_code == 200:
+            enviados_exitosos += 1
+            status_text.text(
+                f"Procesando [{i + 1}/{total}] - Enviado a {nombre} ({telefono})"
             )
-            continue  # Salta automáticamente este registro sin gastar peticiones
+          else:
+            with log_area:
+              st.warning(
+                  f"Error al enviar a {telefono} ({nombre}):"
+                  f" {response.text}"
+              )
 
-          payload = {
-              "messaging_product": "whatsapp",
-              "to": telefono,
-              "type": "template",
-              "template": {
-                  "name": template_name,
-                  "language": {"code": "es"},
-              },
-          }
+        except Exception as e:
+          with log_area:
+            st.error(f"Excepción de red con {telefono}: {e}")
 
-          # Control de reintentos ante limitaciones de velocidad de Meta (Rate Limit / Error 429)
-          intentos = 0
-          exito = False
-          while intentos < 3 and not exito:
-            try:
-              response = requests.post(url, headers=headers, json=payload)
-              if response.status_code == 200:
-                enviados_exitosos += 1
-                logs.append(
-                    f"✅ [Éxito] Mensaje enviado a: {telefono} (Lote"
-                    f" {lote_num})"
-                )
-                exito = True
-              elif response.status_code == 429:
-                intentos += 1
-                logs.append(
-                    f"⚠️ [Rate Limit] Saturación detectada en {telefono}."
-                    f" Pausa e intento {intentos}/3..."
-                )
-                time.sleep(15 * intentos)
-              else:
-                fallidos += 1
-                logs.append(
-                    f"❌ [Error {response.status_code}] Fallo en {telefono}:"
-                    f" {response.text}"
-                )
-                break
-            except Exception as e:
-              fallidos += 1
-              logs.append(f"❌ [Excepción de red] Error con {telefono}: {e}")
-              break
+        progress_bar.progress((i + 1) / total)
+        time.sleep(2)
 
-          # Actualizar log visual en tiempo real
-          log_area.text("\n".join(logs[-10:]))
-
-          # Retraso dinámico aleatorio (Jitter) para imitar comportamiento orgánico
-          pausa_actual = random.uniform(delay_min, delay_max)
-          time.sleep(pausa_actual)
-
-        # Actualizar barra de progreso global del envío
-        progress_bar.progress(
-            min((i + lote_size) / total_contactos, 1.0)
-        )
-
-        # Pausa estratégica de descanso entre lotes para cuidar la reputación del número en Meta
-        if (i + lote_size) < total_contactos:
-          status_text.markdown(
-              f"☕ Lote {lote_num} completado. Pausa de descanso de 30 segundos"
-              " antes del siguiente bloque..."
-          )
-          time.sleep(30)
-
+      st.balloons()
       st.success(
-          "🎉 ¡Campaña finalizada exitosamente! Resumen: Enviados:"
-          f" {enviados_exitosos} | Omitidos por filtro: {omitidos} | Fallidos:"
-          f" {fallidos}"
+          f"✨ ¡Lote finalizado! Se procesaron y enviaron"
+          f" {enviados_exitosos} de {total} mensajes correctamente."
       )
