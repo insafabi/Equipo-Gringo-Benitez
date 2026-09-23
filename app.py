@@ -67,13 +67,14 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file is not None:
   try:
-    # Leer el archivo según su extensión
+    # Leer el archivo de forma segura ignorando errores de codificación
     if uploaded_file.name.endswith(".csv"):
-      df = pd.read_csv(uploaded_file, encoding="utf-8")
+      df = pd.read_csv(uploaded_file, encoding="utf-8", errors="ignore")
     else:
       df = pd.read_excel(uploaded_file)
 
-    # Crear un diccionario para mapear los nombres reales de las columnas en minúsculas sin espacios
+    # Limpiar nombres de columnas
+    df.columns = [str(col).strip() for col in df.columns]
     columnas_map = {str(col).strip().lower(): col for col in df.columns}
 
     # Definir las columnas requeridas que el sistema necesita buscar
@@ -125,17 +126,19 @@ if uploaded_file is not None:
 
           headers = {
               "Authorization": f"Bearer {token}",
-              "Content-Type": "application/json; charset=utf-8",
+              "Content-Type": "application/json",
           }
           # URL con versión v20.0
           url = f"https://graph.facebook.com/v20.0/{phone_number_id}/messages"
 
           for index, row in df_procesar.iterrows():
-            # Limpieza segura que preserva tildes y eñes usando utf-8
-            def limpiar_texto(texto):
-              if pd.isna(texto):
+            # Función ultra segura para limpiar emojis y caracteres problemáticos para latin-1
+            def limpiar_texto(valor):
+              if pd.isna(valor):
                 return ""
-              return str(texto).strip()
+              texto = str(valor)
+              # Filtra caracteres fuera del rango estándar para evitar errores de codec
+              return "".join(c for c in texto if ord(c) < 65536).strip()
 
             nombre = limpiar_texto(row[col_nombre])
             
@@ -148,7 +151,7 @@ if uploaded_file is not None:
                 .replace("+", "")
             )
 
-            # Capturar los datos manteniendo acentos y eñes correctamente
+            # Capturar los datos limpiando emojis o símbolos extraños
             local_votacion = limpiar_texto(row[col_local])
             mesa_votacion = limpiar_texto(row[col_mesa])
             orden_votacion = limpiar_texto(row[col_orden])
@@ -173,22 +176,9 @@ if uploaded_file is not None:
             }
 
             try:
-              # Usar json.dumps asegurando codificación utf-8 explícita para evitar errores con tildes
-              response = requests.post(
-                  url,
-                  data=pd.io.json.json.dumps(payload).encode("utf-8")
-                  if hasattr(pd.io, "json")
-                  else requests.compat.json.dumps(payload).encode("utf-8"),
-                  headers=headers,
-                  timeout=10,
-              )
-            except Exception:
-              # Método alternativo estándar y robusto de requests con json
               response = requests.post(
                   url, json=payload, headers=headers, timeout=10
               )
-
-            try:
               if response.status_code == 200:
                 exitosos += 1
                 with log_container:
@@ -227,7 +217,9 @@ if uploaded_file is not None:
           )
 
   except Exception as e:
+    # Limpiar mensaje de error general para que nunca falle por codificación
+    error_limpio = "".join(c for c in str(e) if ord(c) < 65536)
     st.error(
         f"❌ Ocurrió un error al leer el archivo. Verifica que sea un Excel o"
-        f" CSV válido. Detalle: {e}"
+        f" CSV válido. Detalle: {error_limpio}"
     )
