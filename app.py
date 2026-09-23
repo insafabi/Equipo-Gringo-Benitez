@@ -23,7 +23,6 @@ template_raw = st.sidebar.text_input("Nombre de la Plantilla", value="")
 def limpiar_estricto(texto):
     if not texto or pd.isna(texto):
         return ""
-    # Solo permite letras, números, espacios y signos básicos de puntuación, eliminando emojis de raíz
     return "".join(c for c in str(texto) if ord(c) < 128 and (c.isalnum() or c.isspace() or c in "áéíóúÁÉÍÓÚñÑ.,-_")).strip()
 
 token = limpiar_estricto(token_raw)
@@ -132,7 +131,6 @@ if uploaded_file is not None:
           url = f"https://graph.facebook.com/v20.0/{phone_number_id}/messages"
 
           for index, row in df_procesar.iterrows():
-            # Limpiar cada campo individualmente usando el filtro estricto anti-emojis
             nombre = limpiar_estricto(row[col_nombre])
             
             celular_raw = str(row[col_celular]).strip()
@@ -189,7 +187,10 @@ if uploaded_file is not None:
               error_body = e.read().decode("utf-8", errors="ignore")
               with log_container:
                 st.error(
-                    f"❌ Error HTTP de Meta con {nombre} ({celular}): {error_body}"
+                    f"❌ Meta rechazó la autenticación para {nombre} ({celular}). "
+                    f"Detalle: {error_body} | "
+                    f"Token (inicio): {token[:10]}... (Largo: {len(token)}) | "
+                    f"Phone ID: {phone_number_id}"
                 )
             except Exception as e:
               fallidos += 1
