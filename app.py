@@ -1,187 +1,209 @@
 import time
-import pandas as pd
+import random
 import requests
+import pandas as pd
 import streamlit as st
 
+# Configuración de la página
 st.set_page_config(
-    page_title="Campaña Gringo Benítez - Meta API", page_icon="🗳️", layout="centered"
+    page_title="Panel de Envío Masivo - Meta Cloud API",
+    page_icon="📱",
+    layout="wide",
 )
 
-st.title("🗳️ Panel de Envío Masivo - Meta Cloud API")
-st.write(
-    "Automatización conectada directamente con tu padrón de votantes y la"
-    " plantilla aprobada de forma segura."
-)
-
-# --- BARRA LATERAL: CREDENCIALES ---
-st.sidebar.header("Credenciales de la API")
+# --- BARRA LATERAL: CREDENCIALES Y CONTROLES ---
+st.sidebar.header("🔑 Credenciales de la API")
 token = st.sidebar.text_input("Token de Acceso Permanente", type="password")
 phone_number_id = st.sidebar.text_input("Phone Number ID")
-template_name = st.sidebar.text_input(
-    "Nombre de la Plantilla",
-    value="aviso_general",
-    help="Debe coincidir exactamente con el registrado en Meta",
+template_name = st.sidebar.text_input("Nombre de la Plantilla", value="")
+
+st.sidebar.markdown("---")
+st.sidebar.header("⚙️ Controles de Envío")
+
+# Deslizador de cantidad de mensajes
+max_msgs = st.sidebar.slider(
+    "Cantidad de mensajes a enviar",
+    min_value=1,
+    max_value=500,
+    value=1,
+    step=1,
+    help="Úsalo en 1 para hacer tu prueba de fuego con tu número.",
 )
 
+# Deslizadores de pausa (Mínimo y Máximo)
+pausa_min = st.sidebar.slider(
+    "Pausa Mínima entre mensajes (segundos)",
+    min_value=1,
+    max_value=30,
+    value=3,
+    step=1,
+)
+pausa_max = st.sidebar.slider(
+    "Pausa Máxima entre mensajes (segundos)",
+    min_value=pausa_min,
+    max_value=60,
+    value=7,
+    step=1,
+)
+
+
 # --- CUERPO PRINCIPAL ---
-st.subheader("1. Carga de Base de Datos")
-archivo_subido = st.file_uploader(
-    "Sube tu archivo Excel o CSV con las columnas: NOMBRE y celular",
+st.title("📩 Panel de Envío Masivo - Meta Cloud API")
+st.markdown(
+    "Automatización conectada directamente con tu padrón y la plantilla aprobada de forma segura."
+)
+
+st.markdown("### 1. Carga de Base de Datos")
+st.markdown(
+    "Tu archivo Excel o CSV debe contener obligatoriamente las columnas:"
+    " **NOMBRE**, **celular**, **local**, **mesa**, **orden**"
+)
+
+uploaded_file = st.file_uploader(
+    "Sube tu archivo aquí",
     type=["xlsx", "csv"],
 )
 
-if archivo_subido is not None:
+if uploaded_file is not None:
   try:
     # Leer el archivo según su extensión
-    if archivo_subido.name.endswith(".csv"):
-      df = pd.read_csv(archivo_subido)
+    if uploaded_file.name.endswith(".csv"):
+      df = pd.read_csv(uploaded_file)
     else:
-      df = pd.read_excel(archivo_subido)
+      df = pd.read_excel(uploaded_file)
 
-    # Validar que las columnas obligatorias existan
-    columnas_requeridas = ["NOMBRE", "celular"]
-    columnas_faltantes = [
-        col for col in columnas_requeridas if col not in df.columns
+    # Limpiar nombres de columnas (quitar espacios si los hubiera)
+    df.columns = df.columns.str.strip()
+
+    # Validación estricta de columnas requeridas (puedes ajustar si tus encabezados varían ligeramente en mayúsculas/minúsculas)
+    columnas_necesarias = ["NOMBRE", "celular", "local", "mesa", "orden"]
+    faltantes = [
+        col for col in columnas_necesarias if col not in df.columns
     ]
 
-    if columnas_faltantes:
+    if faltantes:
       st.error(
-          "⚠️ El archivo no tiene la estructura correcta. Faltan las siguientes"
-          f" columnas obligatorias: {columnas_faltantes}. Por favor, verifica"
-          " tu Excel."
+          f"❌ El archivo no tiene las columnas obligatorias. Faltan: {faltantes}"
+          ". Por favor, verifica los nombres de los encabezados en tu Excel."
       )
     else:
       st.success(
-          f"¡Archivo cargado con éxito! Total de registros encontrados:"
+          f"✅ Archivo cargado correctamente. Total de registros en archivo:"
           f" {len(df)}"
       )
 
-      # Vista previa validando las columnas exactas
-      with st.expander("Ver vista previa de los datos a enviar"):
-        st.dataframe(df[["NOMBRE", "celular"]].head(5))
-
-      st.subheader("2. Configuración de la Ráfaga")
-      limite_defecto = min(150, len(df))
-      limite_mensajes = st.slider(
-          "Cantidad máxima de mensajes a enviar en este lote",
-          min_value=1,
-          max_value=len(df),
-          value=limite_defecto,
-      )
-
+      # Mostrar vista previa limitada a lo que el usuario configuró en el slider
+      df_procesar = df.head(max_msgs)
       st.info(
-          f"Se enviarán mensajes de manera automatizada a los primeros"
-          f" **{limite_mensajes}** votantes de la lista."
+          f"ℹ️ Se procesarán los primeros **{len(df_procesar)}** registros según"
+          " el control de cantidad seleccionado."
       )
+      st.dataframe(df_procesar.head(10))
 
-      # Botón de ejecución
-      if st.button("🚀 Iniciar Envío Masivo por API"):
-        if not token or not phone_number_id:
-          st.error(
-              "⚠️ Por favor, ingresa tu Token de Meta y tu Phone Number ID en la"
-              " barra lateral antes de continuar."
+      st.markdown("### 2. Ejecución de Envíos")
+      if st.button("🚀 Iniciar Envío Masivo"):
+        if not token or not phone_number_id or not template_name:
+          st.warning(
+              "⚠️ Por favor, completa todas las credenciales en la barra"
+              " lateral (Token, Phone ID y Plantilla)."
           )
         else:
-          url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
+          barra_progreso = st.progress(0)
+          status_text = st.empty()
+          total = len(df_procesar)
+          exitosos = 0
+          fallidos = 0
+
+          # Contenedor para el registro de resultados en tiempo real
+          log_container = st.container()
+
           headers = {
               "Authorization": f"Bearer {token}",
               "Content-Type": "application/json",
           }
+          url = f"https://graph.facebook.com/v17.0/{phone_number_id}/messages"
 
-          progress_bar = st.progress(0)
-          status_text = st.empty()
-          log_expander = st.expander(
-              "Registro detallado de envíos y posibles errores", expanded=True
-          )
+          for index, row in df_procesar.iterrows():
+            nombre = str(row["NOMBRE"]).strip()
+            
+            # Limpiar número de celular (quita decimales .0 de excel, espacios y guiones)
+            celular_raw = str(row["celular"]).strip()
+            celular = (
+                celular_raw.split(".")[0]
+                .replace(" ", "")
+                .replace("-", "")
+                .replace("+", "")
+            )
 
-          enviados_exitosos = 0
-          enviados_fallidos = 0
-          df_subset = df.head(limite_mensajes)
-          total = len(df_subset)
+            # Capturar los datos del padrón electoral para los parámetros de la plantilla
+            local_votacion = str(row["local"]).strip()
+            mesa_votacion = str(row["mesa"]).strip()
+            orden_votacion = str(row["orden"]).strip()
 
-          with log_expander:
-            for i, row in df_subset.iterrows():
-              # Limpieza profunda del número de celular (quita espacios, guiones, decimales .0)
-              raw_tel = (
-                  str(row["celular"])
-                  .strip()
-                  .replace(" ", "")
-                  .replace("-", "")
+            # Estructura del payload con los 4 parámetros ordenados para la plantilla de Meta:
+            # {{1}} = Nombre | {{2}} = Local | {{3}} = Mesa | {{4}} = Orden
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": celular,
+                "type": "template",
+                "template": {
+                    "name": template_name,
+                    "language": {"code": "es"},
+                    "components": [{
+                        "type": "body",
+                        "parameters": [
+                            {"type": "text", "text": nombre},
+                            {"type": "text", "text": local_votacion},
+                            {"type": "text", "text": mesa_votacion},
+                            {"type": "text", "text": orden_votacion},
+                        ],
+                    }],
+                },
+            }
+
+            try:
+              response = requests.post(
+                  url, json=payload, headers=headers, timeout=10
               )
-              if raw_tel.endswith(".0"):
-                raw_tel = raw_tel[:-2]
-              if not raw_tel.startswith("+"):
-                telefono = "+" + raw_tel
+              if response.status_code == 200:
+                exitosos += 1
+                with log_container:
+                  st.success(f"✅ Enviado a {nombre} ({celular})")
               else:
-                telefono = raw_tel
-
-              # Extraer y formatear el nombre
-              nombre_raw = str(row["NOMBRE"]).strip()
-              if not nombre_raw or nombre_raw.lower() == "nan":
-                nombre = "Vecino/a"
-              else:
-                nombre = nombre_raw.title()
-
-              # Payload oficial de la API de Meta
-              payload = {
-                  "messaging_product": "whatsapp",
-                  "recipient_type": "individual",
-                  "to": telefono,
-                  "type": "template",
-                  "template": {
-                      "name": template_name,
-                      "language": {"code": "es"},
-                      "components": [
-                          {
-                              "type": "body",
-                              "parameters": [
-                                  {
-                                      "type": "text",
-                                      "text": (
-                                          nombre
-                                      ),  # Rellena el parámetro {{1}}
-                                  }
-                              ],
-                          }
-                      ],
-                  },
-              }
-
-              try:
-                response = requests.post(
-                    url, headers=headers, json=payload, timeout=10
+                fallidos += 1
+                with log_container:
+                  st.error(
+                      f"❌ Error con {nombre} ({celular}):"
+                      f" {response.text}"
+                  )
+            except Exception as e:
+              fallidos += 1
+              with log_container:
+                st.error(
+                    f"⚠️ Excepción de red/sistema con {nombre} ({celular}): {e}"
                 )
 
-                if response.status_code == 200:
-                  enviados_exitosos += 1
-                  status_text.text(
-                      f"Procesando [{i + 1}/{total}] - Enviado con éxito a"
-                      f" {nombre} ({telefono})"
-                  )
-                else:
-                  enviados_fallidos += 1
-                  st.warning(
-                      f"❌ Error al enviar a {telefono} ({nombre}) | Código"
-                      f" {response.status_code}: {response.text}"
-                  )
+            # Actualizar barra de progreso
+            porcentaje = int(((index + 1) / total) * 100)
+            barra_progreso.progress(porcentaje)
+            status_text.text(
+                f"Procesando {index + 1} de {total} (Éxitos: {exitosos} |"
+                f" Fallidos: {fallidos})"
+            )
 
-              except requests.exceptions.RequestException as e:
-                enviados_fallidos += 1
-                st.error(f"🌐 Error de red/conexión con {telefono}: {e}")
-
-              progress_bar.progress((i + 1) / total)
-              time.sleep(
-                  2
-              )  # Pausa de seguridad de 2 segundos para evitar saturar la API
+            # Pausa aleatoria configurable entre mínimo y máximo para proteger la cuenta
+            if index < total - 1:  # No pausar después del último mensaje
+              tiempo_pausa = random.randint(pausa_min, pausa_max)
+              time.sleep(tiempo_pausa)
 
           st.balloons()
           st.success(
-              f"✨ ¡Lote finalizado! Exitosos: {enviados_exitosos} | Fallidos:"
-              f" {enviados_fallidos} de un total de {total} procesados."
+              f"🎉 ¡Proceso finalizado! Total exitosos: {exitosos} | Total"
+              f" fallidos: {fallidos}"
           )
 
   except Exception as e:
     st.error(
-        "❌ Ocurrió un error al leer el archivo. Asegúrate de que sea un Excel"
-        f" (.xlsx) o CSV válido. Detalle: {e}"
+        f"❌ Ocurrió un error al leer el archivo. Verifica que sea un Excel o"
+        f" CSV válido. Detalle: {e}"
     )
