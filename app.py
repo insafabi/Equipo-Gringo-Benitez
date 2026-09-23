@@ -19,15 +19,16 @@ token_raw = st.sidebar.text_input("Token de Acceso Permanente", type="password")
 phone_raw = st.sidebar.text_input("Phone Number ID")
 template_raw = st.sidebar.text_input("Nombre de la Plantilla", value="")
 
-# Limpiar automáticamente credenciales de cualquier emoji o caracter invisible pegado por error
-def limpiar_ascii(texto):
-    if not texto:
+# Función ultra estricta para eliminar cualquier emoji, símbolo invisible o carácter extraño
+def limpiar_estricto(texto):
+    if not texto or pd.isna(texto):
         return ""
-    return "".join(c for c in str(texto) if ord(c) < 128).strip()
+    # Solo permite letras, números, espacios y signos básicos de puntuación, eliminando emojis de raíz
+    return "".join(c for c in str(texto) if ord(c) < 128 and (c.isalnum() or c.isspace() or c in "áéíóúÁÉÍÓÚñÑ.,-_")).strip()
 
-token = limpiar_ascii(token_raw)
-phone_number_id = limpiar_ascii(phone_raw)
-template_name = limpiar_ascii(template_raw)
+token = limpiar_estricto(token_raw)
+phone_number_id = limpiar_estricto(phone_raw)
+template_name = limpiar_estricto(template_raw)
 
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Controles de Envío")
@@ -117,7 +118,7 @@ if uploaded_file is not None:
         if not token or not phone_number_id or not template_name:
           st.warning(
               "⚠️ Por favor, completa todas las credenciales en la barra"
-              " lateral (Token, Phone ID y Plantilla) sin dejar espacios ni símbolos extraños."
+              " lateral correctamente."
           )
         else:
           barra_progreso = st.progress(0)
@@ -131,12 +132,8 @@ if uploaded_file is not None:
           url = f"https://graph.facebook.com/v20.0/{phone_number_id}/messages"
 
           for index, row in df_procesar.iterrows():
-            def limpiar_texto(valor):
-              if pd.isna(valor):
-                return ""
-              return str(valor).strip()
-
-            nombre = limpiar_texto(row[col_nombre])
+            # Limpiar cada campo individualmente usando el filtro estricto anti-emojis
+            nombre = limpiar_estricto(row[col_nombre])
             
             celular_raw = str(row[col_celular]).strip()
             celular = (
@@ -146,9 +143,9 @@ if uploaded_file is not None:
                 .replace("+", "")
             )
 
-            local_votacion = limpiar_texto(row[col_local])
-            mesa_votacion = limpiar_texto(row[col_mesa])
-            orden_votacion = limpiar_texto(row[col_orden])
+            local_votacion = limpiar_estricto(row[col_local])
+            mesa_votacion = limpiar_estricto(row[col_mesa])
+            orden_votacion = limpiar_estricto(row[col_orden])
 
             payload = {
                 "messaging_product": "whatsapp",
