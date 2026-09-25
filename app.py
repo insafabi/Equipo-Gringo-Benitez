@@ -136,8 +136,10 @@ if uploaded_file is not None:
           )
         else:
             # Sincronizar diccionario de contadores por si cambiaron los IDs
-            st.session_state.conteo_envios = {phone_ids[0]: st.session_state.conteo_envios.get(phone_ids[0], 0), 
-                                              phone_ids[1]: st.session_state.conteo_envios.get(phone_ids[1], 0)}
+            st.session_state.conteo_envios = {
+                phone_ids[0]: st.session_state.conteo_envios.get(phone_ids[0], 0), 
+                phone_ids[1]: st.session_state.conteo_envios.get(phone_ids[1], 0)
+            }
 
             barra_progreso = st.progress(0)
             status_text = st.empty()
@@ -253,11 +255,11 @@ if uploaded_file is not None:
                   tiempo_pausa = random.randint(pausa_min, pausa_max)
                   time.sleep(tiempo_pausa)
 
-              st.balloons()
-              st.success(
-                  f"🎉 ¡Proceso finalizado! Total exitosos: {exitosos} | Total"
-                  f" fallidos: {fallidos}"
-              )
+            st.balloons()
+            st.success(
+                f"🎉 ¡Proceso finalizado! Total exitosos: {exitosos} | Total"
+                f" fallidos: {fallidos}"
+            )
 
   except Exception as e:
     st.error(
