@@ -1,123 +1,265 @@
-import streamlit as st
-import requests
-import json
 import time
+import random
+import json
+import urllib.request
+import urllib.error
+import pandas as pd
+import streamlit as st
 
-# Configuración de credenciales desde los secretos de Streamlit
-ACCESS_TOKEN = st.secrets.get("WHATSAPP_TOKEN", "")
-WHATSAPP_API_URL = "https://graph.facebook.com/v17.0"
+# Configuración de la página
+st.set_page_config(
+    page_title="Panel de Envío Masivo - Meta Cloud API (Balanceado)",
+    page_icon="📱",
+    layout="wide",
+)
 
-st.subheader("Sistema de Envío Masivo (500 diarios / 250 por número)")
+# --- BARRA LATERAL: CREDENCIALES Y CONTROLES ---
+st.sidebar.header("🔑 Credenciales de la API")
+token_raw = st.sidebar.text_input("Token de Acceso Permanente", type="password")
 
-# Definir los dos IDs de los números de teléfono registrados en la WABA
-phone_ids = [
-    st.secrets.get("PHONE_ID_1", ""),  # Número principal
-    st.secrets.get("PHONE_ID_2", "")   # Segundo número
-]
+# Dos campos para los números de teléfono (Round-Robin)
+phone1_raw = st.sidebar.text_input("Phone Number ID 1 (Principal)")
+phone2_raw = st.sidebar.text_input("Phone Number ID 2 (Secundario)")
 
-# Validar que los IDs y el Token estén configurados
-if not ACCESS_TOKEN or not phone_ids[0] or not phone_ids[1]:
-    st.error("Por favor, configura tu WHATSAPP_TOKEN, PHONE_ID_1 y PHONE_ID_2 en los secretos de Streamlit.")
-    st.stop()
+template_raw = st.sidebar.text_input("Nombre de la Plantilla", value="")
 
-# Inicializar contadores y el turno actual en el estado de la sesión
+# Función ultra estricta para limpiar caracteres extraños
+def limpiar_estricto(texto):
+    if not texto or pd.isna(texto):
+        return ""
+    return "".join(c for c in str(texto) if ord(c) < 128 and (c.isalnum() or c.isspace() or c in "áéíóúÁÉÍÓÚñÑ.,-_")).strip()
+
+token = limpiar_estricto(token_raw)
+phone_ids = [limpiar_estricto(phone1_raw), limpiar_estricto(phone2_raw)]
+template_name = limpiar_estricto(template_raw)
+
+# Inicializar contadores y turnos en st.session_state para el balanceo
 if 'conteo_envios' not in st.session_state:
-    st.session_state.conteo_envios = {phone_ids[0]: 0, phone_ids[1]: 0}
+    st.session_state.conteo_envios = {phone_ids[0] if phone_ids[0] else "p1": 0, phone_ids[1] if phone_ids[1] else "p2": 0}
 
 if 'turno_actual' not in st.session_state:
-    st.session_state.turno_actual = 0  # 0 para el primer número, 1 para el segundo
+    st.session_state.turno_actual = 0
 
-# Mostrar métricas actualizadas al límite de 250 por número
-col1, col2 = st.columns(2)
-with col1:
-    st.metric(label="Envíos Número 1", value=f"{st.session_state.conteo_envios[phone_ids[0]]} / 250")
-with col2:
-    st.metric(label="Envíos Número 2", value=f"{st.session_state.conteo_envios[phone_ids[1]]} / 250")
+st.sidebar.markdown("---")
+st.sidebar.header("⚙️ Controles de Envío")
 
-def enviar_mensaje_balanceado(telefono_destino, template_name, lang_code="es"):
-    """
-    Envía un mensaje alternando entre los dos números (Round-Robin)
-    respetando el límite máximo de 250 mensajes por número.
-    """
-    activo_id = phone_ids[st.session_state.turno_actual]
-    
-    # Verificar si el número actual alcanzó su límite de 250
-    if st.session_state.conteo_envios[activo_id] >= 250:
-        otro_turno = 1 - st.session_state.turno_actual
-        otro_id = phone_ids[otro_turno]
-        if st.session_state.conteo_envios[otro_id] < 250:
-            st.session_state.turno_actual = otro_turno
-            activo_id = otro_id
-        else:
-            st.error("¡Se ha alcanzado el límite diario de 250 mensajes en ambos números (total 500)!")
-            return False
+max_msgs = st.sidebar.slider(
+    "Cantidad de mensajes a enviar",
+    min_value=1,
+    max_value=500,
+    value=1,
+    step=1,
+    help="Configura hasta 500 (repartidos 250 por número).",
+)
 
-    url = f"{WHATSAPP_API_URL}/{activo_id}/messages"
-    
-    headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": str(telefono_destino).strip(),
-        "type": "template",
-        "template": {
-            "name": template_name,
-            "language": {
-                "code": lang_code
-            }
-        }
-    }
-    
-    try:
-        response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=15)
-        
-        if response.status_code == 200:
-            # Incrementar el contador del número que hizo el envío exitoso
-            st.session_state.conteo_envios[activo_id] += 1
-            # Rotar el turno para la siguiente iteración
-            st.session_state.turno_actual = 1 - st.session_state.turno_actual
-            return True
-        else:
-            st.error(f"Error de API con el número {activo_id}: {response.text}")
-            return False
-            
-    except requests.exceptions.RequestException as e:
-        st.error(f"Error de conexión al intentar enviar a {telefono_destino}: {e}")
-        return False
+pausa_min = st.sidebar.slider(
+    "Pausa Mínima entre mensajes (segundos)",
+    min_value=1,
+    max_value=30,
+    value=3,
+    step=1,
+)
+pausa_max = st.sidebar.slider(
+    "Pausa Máxima entre mensajes (segundos)",
+    min_value=pausa_min,
+    max_value=60,
+    value=7,
+    step=1,
+)
 
-# Sección de control para ejecución masiva
-nombre_template = st.text_input("Nombre de la plantilla aprobada (Utility):", value="")
-lista_destinatarios = st.text_area("Lista de teléfonos (uno por línea, ej: 5959XXXXXXXX):")
+st.sidebar.markdown("---")
+st.sidebar.subheader("📊 Estado de las Líneas (Máx 250 c/u)")
+if phone_ids[0] and phone_ids[1]:
+    st.sidebar.text(f"Número 1: {st.session_state.conteo_envios.get(phone_ids[0], 0)} / 250")
+    st.sidebar.text(f"Número 2: {st.session_state.conteo_envios.get(phone_ids[1], 0)} / 250")
 
-if st.button("Iniciar Envío Masivo Balanceado (Hasta 500)"):
-    if not nombre_template:
-        st.warning("Debes ingresar el nombre de la plantilla de WhatsApp.")
-    elif not lista_destinatarios:
-        st.warning("La lista de destinatarios está vacía.")
+# --- CUERPO PRINCIPAL ---
+st.title("📩 Panel de Envío Masivo - Meta Cloud API (Balanceado)")
+st.markdown(
+    "Automatización conectada con tu padrón, inyección de variables en plantilla y balanceo de carga entre dos números."
+)
+
+st.markdown("### 1. Carga de Base de Datos")
+st.markdown(
+    "Tu archivo Excel o CSV debe contener obligatoriamente las columnas:"
+    " **local**, **apellido**, **nombre**, **mesa**, **orden**, **celular**."
+)
+
+uploaded_file = st.file_uploader(
+    "Sube tu archivo aquí",
+    type=["xlsx", "csv"],
+)
+
+if uploaded_file is not None:
+  try:
+    if uploaded_file.name.endswith(".csv"):
+      df = pd.read_csv(uploaded_file, encoding="utf-8", errors="ignore")
     else:
-        telefonos = [t.strip() for t in lista_destinatarios.split("\n") if t.strip()]
-        total_enviados = 0
-        
-        barra_progreso = st.progress(0)
-        total_contactos = len(telefonos)
-        
-        for i, tel in enumerate(telefonos):
-            # Validar si ya se llegó al tope máximo global (500)
-            if sum(st.session_state.conteo_envios.values()) >= 500:
-                st.warning("Se ha alcanzado el límite máximo combinado de 500 mensajes diarios.")
-                break
+      df = pd.read_excel(uploaded_file)
+
+    # Limpiar nombres de columnas
+    df.columns = [str(col).strip() for col in df.columns]
+    columnas_map = {str(col).strip().lower(): col for col in df.columns}
+
+    requeridas = ["nombre", "celular", "local", "mesa", "orden"]
+    faltantes = [req for req in requeridas if req not in columnas_map]
+
+    if faltantes:
+      st.error(
+          f"❌ El archivo no tiene las columnas obligatorias. Faltan: {faltantes}"
+          ". Por favor, verifica los encabezados en tu Excel."
+      )
+    else:
+      col_nombre = columnas_map["nombre"]
+      col_celular = columnas_map["celular"]
+      col_local = columnas_map["local"]
+      col_mesa = columnas_map["mesa"]
+      col_orden = columnas_map["orden"]
+
+      st.success(
+          f"✅ Archivo cargado correctamente. Total de registros en archivo:"
+          f" {len(df)}"
+      )
+
+      df_procesar = df.head(max_msgs)
+      st.info(
+          f"ℹ️ Se procesarán los primeros **{len(df_procesar)}** registros según"
+          " el control de cantidad seleccionado."
+      )
+      st.dataframe(df_procesar.head(10))
+
+      st.markdown("### 2. Ejecución de Envíos")
+      if st.button("🚀 Iniciar Envío Masivo Balanceado"):
+        if not token or not phone_ids[0] or not phone_ids[1] or not template_name:
+          st.warning(
+              "⚠️ Por favor, completa el Token, ambos Phone Number IDs y el nombre de la plantilla correctamente."
+          )
+        else:
+            # Sincronizar diccionario de contadores por si cambiaron los IDs
+            st.session_state.conteo_envios = {phone_ids[0]: st.session_state.conteo_envios.get(phone_ids[0], 0), 
+                                              phone_ids[1]: st.session_state.conteo_envios.get(phone_ids[1], 0)}
+
+            barra_progreso = st.progress(0)
+            status_text = st.empty()
+            total = len(df_procesar)
+            exitosos = 0
+            fallidos = 0
+
+            log_container = st.container()
+
+            for index, row in df_procesar.iterrows():
+                # Determinar qué número toca usar (Round-Robin) y verificar límite de 250
+                activo_id = phone_ids[st.session_state.turno_actual]
                 
-            exito = enviar_mensaje_balanceado(tel, nombre_template)
-            if exito:
-                total_enviados += 1
+                if st.session_state.conteo_envios[activo_id] >= 250:
+                    otro_turno = 1 - st.session_state.turno_actual
+                    otro_id = phone_ids[otro_turno]
+                    if st.session_state.conteo_envios[otro_id] < 250:
+                        st.session_state.turno_actual = otro_turno
+                        activo_id = otro_id
+                    else:
+                        with log_container:
+                            st.error("⚠️ Se ha alcanzado el límite máximo diario de 250 mensajes en ambos números (500 total).")
+                        break
+
+                url = f"https://graph.facebook.com/v20.0/{activo_id}/messages"
+
+                nombre = limpiar_estricto(row[col_nombre])
                 
-            # Actualizar barra de progreso
-            barra_progreso.progress((i + 1) / total_contactos)
-            
-            # Pausa de seguridad para evitar restricciones de la API
-            time.sleep(0.5)
-            
-        st.success(f"Proceso finalizado. Mensajes enviados exitosamente: {total_enviados}")
+                celular_raw = str(row[col_celular]).strip()
+                celular = (
+                    celular_raw.split(".")[0]
+                    .replace(" ", "")
+                    .replace("-", "")
+                    .replace("+", "")
+                )
+
+                local_votacion = limpiar_estricto(row[col_local])
+                mesa_votacion = limpiar_estricto(row[col_mesa])
+                orden_votacion = limpiar_estricto(row[col_orden])
+
+                payload = {
+                    "messaging_product": "whatsapp",
+                    "to": celular,
+                    "type": "template",
+                    "template": {
+                        "name": template_name,
+                        "language": {"code": "es"},
+                        "components": [{
+                            "type": "body",
+                            "parameters": [
+                                {"type": "text", "text": nombre},
+                                {"type": "text", "text": local_votacion},
+                                {"type": "text", "text": mesa_votacion},
+                                {"type": "text", "text": orden_votacion},
+                            ],
+                        }],
+                    },
+                }
+
+                try:
+                  data_json = json.dumps(payload).encode("utf-8")
+                  
+                  req = urllib.request.Request(url, data=data_json, method="POST")
+                  req.add_header("Authorization", f"Bearer {token}")
+                  req.add_header("Content-Type", "application/json; charset=utf-8")
+
+                  with urllib.request.urlopen(req, timeout=10) as response:
+                    response_body = response.read().decode("utf-8")
+                    response_data = json.loads(response_body)
+
+                    if response.status == 200:
+                      exitosos += 1
+                      # Incrementar contador del número activo y alternar turno
+                      st.session_state.conteo_envios[activo_id] += 1
+                      st.session_state.turno_actual = 1 - st.session_state.turno_actual
+
+                      msg_id = "N/D"
+                      try:
+                        msg_id = response_data.get("messages", [{}])[0].get("id", "N/D")
+                      except Exception:
+                        pass
+
+                      with log_container:
+                        st.success(f"✅ Enviado a {nombre} ({celular}) vía `{activo_id}` | ID Meta: `{msg_id}`")
+                    else:
+                      fallidos += 1
+                      with log_container:
+                        st.error(
+                            f"❌ Error con {nombre} ({celular}) en {activo_id}: código {response.status}"
+                        )
+                except urllib.error.HTTPError as e:
+                  fallidos += 1
+                  error_body = e.read().decode("utf-8", errors="ignore")
+                  with log_container:
+                    st.error(
+                        f"❌ Error HTTP con {nombre} ({celular}): {error_body}"
+                    )
+                except Exception as e:
+                  fallidos += 1
+                  with log_container:
+                    st.error(
+                        f"⚠️ Excepción de red con {nombre} ({celular}): {str(e)}"
+                    )
+
+                porcentaje = int(((index + 1) / total) * 100)
+                barra_progreso.progress(porcentaje)
+                status_text.text(
+                    f"Procesando {index + 1} de {total} (Éxitos: {exitosos} |"
+                    f" Fallidos: {fallidos})"
+                )
+
+                if index < total - 1:
+                  tiempo_pausa = random.randint(pausa_min, pausa_max)
+                  time.sleep(tiempo_pausa)
+
+              st.balloons()
+              st.success(
+                  f"🎉 ¡Proceso finalizado! Total exitosos: {exitosos} | Total"
+                  f" fallidos: {fallidos}"
+              )
+
+  except Exception as e:
+    st.error(
+        f"❌ Ocurrió un error al leer el archivo. Detalle: {str(e)}"
+    )
